@@ -1,0 +1,6 @@
+#!/opt/vyatta/bin/cliexpr
+commit:expression: $VAR(plaintext-key/) != "" || $VAR(encrypted-key/) != "" ; "Must specify plaintext-key or encrypted-key"
+commit:expression: ($VAR(plaintext-key/) == "" && $VAR(encrypted-key/) != "") \
+	|| ($VAR(plaintext-key/) != "" && $VAR(encrypted-key/) == ""); "Cannot specify both plaintext-key and encrypted-key"
+commit:expression: ($VAR(../engineid/) == "" && $VAR(encrypted-key/) == "") \
+        || ($VAR(../engineid/) != "" && $VAR(encrypted-key/) != ""); "Cannot specify only one of engineid or encrypted-key"

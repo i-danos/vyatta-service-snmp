@@ -1,0 +1,2 @@
+#!/opt/vyatta/bin/cliexpr
+commit:expression: $VAR(auth/) != "" || $VAR(tsm-key/) != "" ; "must specify auth or tsm-key"

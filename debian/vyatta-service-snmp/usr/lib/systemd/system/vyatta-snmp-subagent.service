@@ -1,0 +1,10 @@
+[Unit]
+Description=Vyatta SNMP subagent
+After=network.target snmpd.service
+
+[Service]
+Type=simple
+ExecStart=/opt/vyatta/sbin/vyatta-snmp-subagent
+
+[Install]
+WantedBy=multi-user.service

@@ -1,0 +1,13 @@
+[Unit]
+Description=Vyatta SNMP subagent for ENTITY MIBs
+After=network.target snmpd.service
+ConditionPathExists=|/dev/ipmi0
+ConditionPathExists=|/dev/ipmi/0
+ConditionPathExists=|/dev/ipmidev/0
+
+[Service]
+Type=simple
+ExecStart=/opt/vyatta/sbin/vyatta-entity-mibs-subagent
+
+[Install]
+WantedBy=multi-user.service

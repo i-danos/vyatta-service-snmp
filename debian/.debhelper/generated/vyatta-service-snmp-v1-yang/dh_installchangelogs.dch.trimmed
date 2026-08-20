@@ -1,0 +1,133 @@
+vyatta-service-snmp (0.48.1) unstable; urgency=medium
+
+  * SIAD fails to start SNMP service once it reboots
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Thu, 16 Sep 2021 13:54:44 -0700
+
+vyatta-service-snmp (0.48) unstable; urgency=medium
+
+  [ Nicholas Brown ]
+  * dh-systemd is part of debhelper
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Sun, 14 Mar 2021 20:59:46 -0700
+
+vyatta-service-snmp (0.47) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * Conditionally start vyatta-ptp-mib-subagent
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Wed, 13 Jan 2021 15:04:53 -0800
+
+vyatta-service-snmp (0.46) unstable; urgency=medium
+
+  [ Daniel Gollub ]
+  * Drop vyatta-ipsec-trapd reference
+  * Wipe trapd.ini config in case of a config tear down
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Fri, 08 Jan 2021 10:18:41 -0800
+
+vyatta-service-snmp (0.45) unstable; urgency=medium
+
+  [ Nicholas Brown ]
+  * Use description from 'show version' for sysDescr
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Fri, 04 Sep 2020 09:44:58 -0700
+
+vyatta-service-snmp (0.44) unstable; urgency=medium
+
+  * J2: Support for ENTITY SENSOR MIB
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Mon, 27 Jul 2020 15:10:33 -0700
+
+vyatta-service-snmp (0.43) unstable; urgency=medium
+
+  [ Thomas Kiely ]
+  * Remove incorrect ERR message and update expected args.
+
+ -- Mark Gillott <mgillott@vyatta.att-mail.com>  Wed, 10 Jun 2020 11:41:35 +0100
+
+vyatta-service-snmp (0.42) unstable; urgency=medium
+
+  [ Gavin Shearer ]
+  * nat: update due to change in NAT mappings used count JSON output
+
+  [ Duncan Eastoe ]
+  * Split Subagent.pm and MIBMisc.pm into lib package
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Thu, 21 May 2020 12:24:32 -0700
+
+vyatta-service-snmp (0.41) unstable; urgency=medium
+
+  [ Duncan Eastoe ]
+  * vyatta-service-snmp: add libsnmp-perl dependency
+  * Initialise $sorted_mib_tree entry as array
+  * MIBMisc: Add clear_mib_trees sub
+  * MIBMisc: document key data structures
+  * MIBMisc: add GETNEXT fast lookup table
+  * Assume MIB trees are built roughly sorted
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Wed, 13 May 2020 10:09:20 -0700
+
+vyatta-service-snmp (0.40) unstable; urgency=medium
+
+  [ Nicholas Brown ]
+  * Actually install vyatta_sendtrap_daemonstopped
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Wed, 22 Apr 2020 10:10:31 -0700
+
+vyatta-service-snmp (0.39) unstable; urgency=medium
+
+  * Rebrand AT&T proprietary MIB objects values
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Fri, 10 Apr 2020 14:29:28 -0700
+
+vyatta-service-snmp (0.38) unstable; urgency=medium
+
+  [ Sharmila Podury ]
+  * 'show snmp community' error
+
+  [ Duncan Eastoe ]
+  * MIBMisc.pm: get_oid() requires numeric OID
+
+  [ Sharmila Podury ]
+  * Add vyatta_sendtrap_daemonstopped script
+  * SNMP show commands for community and trap-target fail
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Mon, 30 Mar 2020 09:27:05 -0700
+
+vyatta-service-snmp (0.37) unstable; urgency=medium
+
+  [ Ethan Li ]
+  * Handle SNMP traps for 'no buffer' notification
+
+  [ Sharmila Podury ]
+  * ENTITY-SENSOR-MIB: Incorrect OID values
+  * ENTITY-MIB: Missing entPhysicalDescr OID
+  * Suppress SNMP client connection log messages
+  * SNMP errors during PTP configuration
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Tue, 11 Feb 2020 14:05:55 -0800
+
+vyatta-service-snmp (0.36) unstable; urgency=medium
+
+  * snmp entity subagent failed to handle month 12
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Mon, 09 Dec 2019 10:55:46 -0800
+
+vyatta-service-snmp (0.35) unstable; urgency=medium
+
+  * SNMP Not working in 1908
+
+ -- Sharmila Podury <sharmila.podury@att.com>  Fri, 06 Dec 2019 15:30:26 -0800
+
+vyatta-service-snmp (0.34) unstable; urgency=medium
+
+  * DANOS Import master
+
+ -- Vyatta Package Maintainers <DL-vyatta-help@att.com>  Tue, 12 Nov 2019 14:54:06 +0000
+
+vyatta-service-snmp (0.30.2) unstable; urgency=medium
+
+  * DANOS Import
+
+ -- Vyatta Package Maintainers <DL-vyatta-help@att.com>  Tue, 12 Nov 2019 14:48:45 +0000

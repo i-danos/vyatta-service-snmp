@@ -1,0 +1,11 @@
+[Unit]
+Description=Vyatta SNMP subagent for PTP MIB
+After=network.target snmpd.service
+ConditionPathExists=/opt/vyatta/sbin/vyatta-ptp-state
+
+[Service]
+Type=simple
+ExecStart=/opt/vyatta/sbin/vyatta-ptp-mib-subagent
+
+[Install]
+WantedBy=multi-user.service

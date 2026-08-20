@@ -80,7 +80,6 @@ Package: vyatta-service-snmp-routing-instance-v1-yang
 Architecture: all
 Depends: vyatta-service-snmp, ${misc:Depends}, ${yang:Depends},
  libvyatta-vrfmanager-perl,
- vyatta-service-snmp-routing-instance-op,
- vyatta-snmp-vrf-agent (>= 1.8)
+ vyatta-service-snmp-routing-instance-op
 Description: vyatta-service-snmp-routing-instance-v1 module
  SNMP routing-instance configuration

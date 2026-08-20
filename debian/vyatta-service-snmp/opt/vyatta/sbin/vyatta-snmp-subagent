@@ -1,0 +1,150 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2018-2019, AT&T Intellectual Property. All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+use strict;
+use warnings;
+
+use NetAddr::IP qw(:lower);
+use Net::IP qw(ip_expand_address);
+use NetSNMP::ASN(':all');
+use JSON;
+
+use lib "/opt/vyatta/share/perl5/";
+use Vyatta::Misc;
+use Vyatta::IFMib qw(%mib get_octets);
+use Vyatta::SNMPSubagent;
+
+# OID of ipAddressOrigin [RFC4293]
+my $ipMIBipAddressOrigin_oid = '.1.3.6.1.2.1.4.34.1.6';
+
+# OID of ipAddressOrigin [RFC4293]
+my $ipMIBipSystemStatsTable_oid = '.1.3.6.1.2.1.4.31.1.1';
+
+my $snmp_subagent;
+
+use constant IPADDRORIGIN_REFRESH  => 120;    # seconds
+use constant IPSYSTEMSTATS_REFRESH => 60;     # seconds
+
+Readonly::Hash my %stats_type => (
+    0 => ASN_COUNTER,
+    1 => ASN_COUNTER64,
+    2 => ASN_TIMETICKS,
+    3 => ASN_GAUGE,
+);
+
+Readonly::Hash my %origin_type => (
+    OTHER     => 1,
+    MANUAL    => 2,
+    DHCP      => 4,
+    LINKLAYER => 5,
+    RANDOM    => 6,
+);
+
+sub get_type {
+    my ( $key, $ip, $ifname ) = @_;
+
+    return unless defined($ifname);
+
+    my $type;
+    my $intf = new Vyatta::Interface($ifname);
+    return if ( !defined($intf) );
+    my $config = new Vyatta::Config();
+    $config->setLevel( $intf->path() );
+
+    my $dhcp = ( $ip->version() == 6 ) ? "address dhcpv6" : "address dhcp";
+    if ( $intf->type() ne 'loopback' && $config->existsOrig("disable") ) {
+        return;
+    }
+    elsif ( is_link_local( $ip->addr() ) ) {
+        $type =
+          ( $ip->version() == 6 )
+          ? $origin_type{LINKLAYER}
+          : $origin_type{RANDOM};
+    }
+    elsif ( $config->existsOrig($dhcp) ) {
+        $type = $origin_type{DHCP};
+    }
+    elsif ( is_address_enabled($ifname) ) {
+        $type = $origin_type{MANUAL};
+    }
+    else {
+        $type = $origin_type{OTHER};
+    }
+    return $type;
+}
+
+sub populate_ipAddressOrigin {
+    my $base_oid = $ipMIBipAddressOrigin_oid;
+    my $ifname;
+    my $ip_info = decode_json(`ip -json addr show`);
+    foreach my $info ( @{$ip_info} ) {
+        next if ( !defined( $info->{addr_info} ) );
+        my $addrs_info = $info->{addr_info};
+        my $ifname     = $info->{ifname};
+        my $link       = $info->{link};
+        $ifname = join( "@", $ifname, $link ) if ( defined($link) );
+        foreach my $ai ( @{$addrs_info} ) {
+            my $proto  = $ai->{family};
+            my $ipaddr = $ai->{local};
+            my $bcast  = $ai->{broadcast};
+            if ( $proto eq "inet" ) {
+                my $ip_version = 4;
+                my $key = ip_expand_address( $ipaddr, $ip_version );
+                $key = ip_expand_address( $bcast, $ip_version )
+                  if ( defined($bcast) );
+                if ( valid_ip_addr($key) ) {
+                    my $ipkey = new NetAddr::IP $key;
+                    my $type = get_type( $key, $ipkey, $ifname );
+                    next unless defined($type);
+                    my $oid =
+                        $base_oid . '.'
+                      . $mib{IPV4_ADDR} . '.'
+                      . $mib{IPV4_ADDRLEN} . '.'
+                      . $key;
+                    $snmp_subagent->add_tree_entry( $oid, ASN_INTEGER, $type );
+                }
+            }
+            elsif ( $proto eq "inet6" ) {
+                my $ip_version = 6;
+                my $key = ip_expand_address( $ipaddr, $ip_version );
+                if ( valid_ipv6_addr($key) ) {
+                    my $ipv6addr = new NetAddr::IP $key;
+                    my $type = get_type( $key, $ipv6addr, $ifname );
+                    next unless defined($type);
+                    my $addr = get_octets($key);
+                    my $oid =
+                        $base_oid . '.'
+                      . $mib{IPV6_ADDR} . '.'
+                      . $mib{IPV6_ADDRLEN} . '.'
+                      . $addr;
+                    $snmp_subagent->add_tree_entry( $oid, ASN_INTEGER, $type );
+                }
+            }
+        }
+    }
+}
+
+sub populate_ipSystemStats {
+    system( "/opt/vyatta/sbin/vplane-snmp", "-p", "/tmp/ipSystemStats" );
+    if ( open( my $fh, '<', '/tmp/ipSystemStats' ) ) {
+        while ( my $line = <$fh> ) {
+            chomp($line);
+            my ( $oid, $type, $value ) = split / /, $line;
+            $snmp_subagent->add_tree_entry( $oid, $stats_type{$type}, $value );
+        }
+        close($fh);
+        unlink("/tmp/ipSystemStats");
+    }
+}
+
+$snmp_subagent = Vyatta::SNMPSubagent->new("vyatta-snmp-subagent");
+
+$snmp_subagent->register_oid( $ipMIBipAddressOrigin_oid,
+    \&populate_ipAddressOrigin, IPADDRORIGIN_REFRESH );
+$snmp_subagent->register_oid( $ipMIBipSystemStatsTable_oid,
+    \&populate_ipSystemStats, IPSYSTEMSTATS_REFRESH );
+
+$snmp_subagent->run();

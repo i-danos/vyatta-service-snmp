@@ -1,0 +1,4 @@
+shlibs:Depends=libc6 (>= 2.38), libsnmp40t64 (>= 5.9.4+dfsg)
+yang:Depends=
+misc:Depends=
+misc:Pre-Depends=

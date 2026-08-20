@@ -1,0 +1,11 @@
+Package: vyatta-entity-sensor-subagent
+Source: vyatta-service-snmp
+Version: 0.48.1
+Architecture: amd64
+Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
+Installed-Size: 60
+Depends: perl:any, libc6 (>= 2.38), libsnmp40t64 (>= 5.9.4+dfsg)
+Section: contrib/net
+Priority: optional
+Description: vyatta-entity-sensor_subagent module
+ SNMP subagent for sending Entity Sensor traps

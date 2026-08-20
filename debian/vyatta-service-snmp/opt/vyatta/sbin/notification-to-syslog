@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+#
+# Copyright (c) 2018-2019, AT&T Intellectual Property. All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+import syslog
+import sys
+
+FACILITY = syslog.LOG_DAEMON
+PRIORITY = syslog.LOG_WARNING
+IDENT = 'notification-to-syslog'
+syslogMsgNotification = 'SNMPv2-SMI::mib-2.192.0.1'
+snmpTrapOID = 'SNMPv2-MIB::snmpTrapOID.0'
+
+def nametofacility(name):
+    map = {
+        'authpriv': syslog.LOG_AUTHPRIV,
+        'auth':     syslog.LOG_AUTH,
+        'cron':     syslog.LOG_CRON,
+        'daemon':   syslog.LOG_DAEMON,
+        'kern':     syslog.LOG_KERN,
+        'local0':   syslog.LOG_LOCAL0,
+        'local1':   syslog.LOG_LOCAL1,
+        'local2':   syslog.LOG_LOCAL2,
+        'local3':   syslog.LOG_LOCAL3,
+        'local4':   syslog.LOG_LOCAL4,
+        'local5':   syslog.LOG_LOCAL5,
+        'local6':   syslog.LOG_LOCAL6,
+        'local7':   syslog.LOG_LOCAL7,
+        'lpr':      syslog.LOG_LPR,
+        'mail':     syslog.LOG_MAIL,
+        'news':     syslog.LOG_NEWS,
+        'syslog':   syslog.LOG_SYSLOG,
+        'user':     syslog.LOG_USER,
+        'uucp':     syslog.LOG_UUCP,
+    }
+    try:
+        return map[name]
+    except:
+        print("unknown facility: " + name)
+        sys.exit(1)
+
+def nametopriority(name):
+    map = {
+        'alert':   syslog.LOG_ALERT,
+        'crit':    syslog.LOG_CRIT,
+        'debug':   syslog.LOG_DEBUG,
+        'emerg':   syslog.LOG_EMERG,
+        'err':     syslog.LOG_ERR,
+        'info':    syslog.LOG_INFO,
+        'notice':  syslog.LOG_NOTICE,
+        'warning': syslog.LOG_WARNING,
+    }
+    try:
+        return map[name]
+    except:
+        print("unknown priority: " + name)
+        sys.exit(1)
+
+def usage():
+    print("notification-to-syslog [-p facility.priority]")
+    sys.exit(1)
+
+sys.argv.pop(0)
+
+while len(sys.argv):
+    arg = sys.argv.pop(0)
+    if arg == '-p':
+        try:
+            arg = sys.argv.pop(0)
+            (facility, priority) = arg.split('.')
+        except:
+            usage()
+        FACILITY = nametofacility(facility)
+        PRIORITY = nametopriority(priority)
+        continue
+    print("unknown option: ", arg)
+    exit(1)
+
+pdu_hostname = sys.stdin.readline().rstrip()
+pdu_transport = sys.stdin.readline().rstrip()
+bindings = dict()
+for binding in sys.stdin.readlines():
+    words = binding.rstrip().split(" ", 1)
+    if len(words) == 2:
+        bindings[words[0]] = words[1]
+    else:
+        bindings[words[0]] = ''
+
+if snmpTrapOID in bindings and \
+    bindings[snmpTrapOID] == syslogMsgNotification:
+    sys.exit(0)
+
+syslog.openlog(IDENT, facility=FACILITY)
+syslog.syslog(PRIORITY, pdu_hostname + ": " + ", ".join([var + " = " + bindings[var] for var in bindings.keys()]))
+
+sys.exit(0)

@@ -1,0 +1,10 @@
+libsnmp-vyatta-perl_0.48.1_amd64.deb contrib/net optional
+vyatta-entity-sensor-subagent-dbgsym_0.48.1_amd64.deb contrib/debug optional automatic=yes
+vyatta-entity-sensor-subagent_0.48.1_amd64.deb contrib/net optional
+vyatta-omrfc5676-dbgsym_0.48.1_amd64.deb contrib/debug optional automatic=yes
+vyatta-omrfc5676_0.48.1_amd64.deb contrib/net optional
+vyatta-service-snmp-routing-instance-op_0.48.1_all.deb contrib/net optional
+vyatta-service-snmp-routing-instance-v1-yang_0.48.1_all.deb contrib/net optional
+vyatta-service-snmp-v1-yang_0.48.1_all.deb contrib/net optional
+vyatta-service-snmp_0.48.1_amd64.buildinfo contrib/net optional
+vyatta-service-snmp_0.48.1_amd64.deb contrib/net optional

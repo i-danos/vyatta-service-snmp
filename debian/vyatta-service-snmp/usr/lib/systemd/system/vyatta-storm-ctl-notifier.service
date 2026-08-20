@@ -1,0 +1,11 @@
+[Unit]
+Description=Vyatta SNMP Trap generator for Storm Control
+After=network.target snmpd.service
+
+[Service]
+Restart=on-failure
+Type=simple
+ExecStart=/usr/bin/python3 /opt/vyatta/bin/vyatta-storm-ctl-trap.py
+
+[Install]
+WantedBy=multi-user.service

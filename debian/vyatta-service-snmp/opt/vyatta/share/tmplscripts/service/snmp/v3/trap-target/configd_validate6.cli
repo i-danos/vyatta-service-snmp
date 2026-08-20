@@ -1,0 +1,2 @@
+#!/opt/vyatta/bin/cliexpr
+commit:expression: $VAR(type/@) == "inform" || $VAR(type/@) == "trap" && $VAR(engineid/) != "" ; "must specify engineid if type is 'trap'"

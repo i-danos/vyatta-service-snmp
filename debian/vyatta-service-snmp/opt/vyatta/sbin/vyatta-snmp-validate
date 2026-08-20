@@ -1,0 +1,214 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2018-2019, AT&T Intellectual Property. All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+use strict;
+use warnings;
+
+use lib "/opt/vyatta/share/perl5/";
+use Vyatta::Config;
+use Vyatta::SNMPListen;
+
+
+my $config = new Vyatta::Config;
+my $snmp_level    = 'service snmp';
+my $snmp_v3_level = 'service snmp v3';
+
+# check relation between community & view
+sub check_v2_relation {
+    $config->setLevel($snmp_level);
+    my $haveError = 0;
+    foreach my $community ( $config->listNodes("community") ) {
+        my $context = $config->returnValue("community $community context");
+        my $view    = $config->returnValue("community $community view");
+        if ( defined($context) && !defined($view) ) {
+            $haveError = 1;
+            print
+"Please create view for community \"$community\", it is required for community configured with context\n";
+        }
+        if ( defined($view) && !$config->exists("view $view") ) {
+            $haveError = 1;
+            print
+"Please create view \"$view\", it is required for community \"$community\"\n";
+        }
+    }
+    my $v3config = new Vyatta::Config;
+    $v3config->setLevel('service snmp v3');
+    foreach my $group ( $v3config->listNodes("group") ) {
+        my $view = $v3config->returnValue("group $group view");
+        if ( defined($view) && !$config->exists("view $view") ) {
+            $haveError = 1;
+            print
+"Please create view \"$view\", it is required for v3 group \"$group\"\n";
+        }
+    }
+    if ($haveError) {
+        exit(1);
+    }
+}
+
+# validate vyatta v2 config before write it into files
+# can be called directly
+sub snmp_v2_check {
+    check_v2_relation();
+    validate_listen_address();
+}
+
+# check changes in auth and privacy nodes
+# deny set encrypted-key in case engineid wasn't set
+sub check_user_auth_changes {
+    $config->setLevel($snmp_v3_level);
+    my $v3engineid = "";
+
+    if ( $config->exists("engineid") ) {
+        $v3engineid = $config->returnValue("engineid");
+    }
+
+    if ( $config->isChanged("user") || $config->isChanged("engineid") ) {
+        my $haveError = 0;
+        foreach my $user ( $config->listNodes("user") ) {
+            $config->setLevel( $snmp_v3_level . " user $user" );
+            if (   $config->exists("engineid")
+                && !( $v3engineid eq "" )
+                && !( $config->returnValue("engineid") eq "" )
+                && !( $config->returnValue("engineid") eq $v3engineid ) )
+            {
+                print
+"Warning: Encrypted key(s) for snmp v3 user \"$user\" was(were) generated for another SNMP engineid. It won't work. Please recreate this user.\n";
+            }
+            if ( $config->exists("auth") ) {
+
+                my $isAuthEKeyExists = $config->exists("auth encrypted-key");
+                my $isPrivEKeyExists = $config->exists("privacy encrypted-key");
+                $isAuthEKeyExists = 0 if ( !$isAuthEKeyExists );
+                $isPrivEKeyExists = 0 if ( !$isPrivEKeyExists );
+                if ( !$config->exists("engineid")
+                    && ( $isAuthEKeyExists || $isPrivEKeyExists ) )
+                {
+                    $haveError = 1;
+                    print
+"Discard encrypted-key on user \"$user\". It's necessary to setup engineid the encrypted-key was generated with.\n";
+                }
+                my $isAuthKeyExists = $config->exists("auth plaintext-key");
+                my $isPrivKeyExists = $config->exists("privacy plaintext-key");
+                $isAuthKeyExists = 0 if ( !$isAuthKeyExists );
+                $isPrivKeyExists = 0 if ( !$isPrivKeyExists );
+                if ( $config->exists("privacy") ) {
+                    if (   ( $isPrivKeyExists ^ $isAuthKeyExists )
+                        || ( $isPrivEKeyExists ^ $isAuthEKeyExists ) )
+                    {
+                        $haveError = 1;
+                        print
+"Please, set correct auth and privacy for user \"$user\"\n";
+                        print
+"Set plaintext-key for auth and privacy or set encrypted-key for both\n";
+                    }
+                }
+            }
+            else {
+                if ( $config->exists("privacy") ) {
+                    $haveError = 1;
+                    print "Please, delete privacy for user \"$user\"\n";
+                }
+            }
+        }
+        if ($haveError) {
+            exit(1);
+        }
+    }
+}
+
+# check relation between user & group & view
+sub check_v3_relation {
+    $config->setLevel($snmp_v3_level);
+    my $haveError = 0;
+    foreach my $user ( $config->listNodes("user") ) {
+        if ( $config->exists("user $user group") ) {
+            my $group = $config->returnValue("user $user group");
+            if ( !$config->exists("group $group") ) {
+                $haveError = 1;
+                print
+"Please create group \"$group\", it is required for user \"$user\"\n";
+            }
+        }
+    }
+    if ($haveError) {
+        exit(1);
+    }
+}
+
+# check is new tsm port free on system
+sub check_tsm_port {
+    $config->setLevel($snmp_v3_level);
+    if ( $config->exists("tsm port") && $config->isChanged("tsm port") ) {
+        my $port   = $config->returnValue("tsm port");
+        my $reg    = ":$port\$";
+        my $output = `netstat -anltup | awk '{print  \$4}'`;
+        foreach my $line ( split( /\n/, $output ) ) {
+            if ( $line =~ /$reg/ ) {
+                print "Port $port is in use, it can not be used for tsm.\n";
+                exit(1);
+            }
+        }
+    }
+}
+
+# check group seclevel and user auth/privacy
+sub check_seclevel {
+    $config->setLevel($snmp_v3_level);
+    my $haveError = 0;
+    if ( $config->isChanged("user") || $config->isChanged("group") ) {
+        foreach my $user ( $config->listNodes("user") ) {
+            if ( $config->exists("user $user group") ) {
+                my $group = $config->returnValue("user $user group");
+                if (   $config->isChanged("user $user")
+                    || $config->isChanged("group $group") )
+                {
+                    my $group_seclevel =
+                      $config->returnValue("group $group seclevel");
+                    if ( $config->exists("user $user privacy") ) {
+                        if ( $group_seclevel eq "auth" ) {
+                            print
+"User \"$user\" has privacy, but group \"$group\" has \"auth\" as seclevel. So auth and priv work both.\n";
+                        }
+                    }
+                    else {
+                        if ( $group_seclevel eq "priv" ) {
+                            print
+"User \"$user\" must enable privacy, if group \"$group\" has \"priv\" as seclevel.\n";
+                            $haveError = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if ($haveError) {
+        exit(1);
+    }
+}
+
+# validate vyatta v3 config before write it into files
+# can be called directly
+sub snmp_v3_check {
+    check_user_auth_changes();
+    check_v3_relation();
+    check_tsm_port();
+    check_seclevel();
+}
+
+# validate vyatta config before write it into files
+# can be called directly
+sub snmp_check {
+    if ( $config->exists("service snmp v3") ) {
+        snmp_v3_check();
+    }
+    snmp_v2_check();
+}
+
+#
+# main
+#
+snmp_check();

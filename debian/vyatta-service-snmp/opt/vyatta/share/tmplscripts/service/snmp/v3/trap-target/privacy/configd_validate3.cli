@@ -1,0 +1,2 @@
+#!/opt/vyatta/bin/cliexpr
+commit:expression: !($VAR(encrypted-key/) != "" && $VAR(plaintext-key/) != "") ; "must specify only one of encrypted-key and plaintext-key"

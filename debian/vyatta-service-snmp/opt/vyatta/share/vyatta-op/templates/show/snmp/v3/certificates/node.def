@@ -1,0 +1,7 @@
+help: Show TSM certificates
+run: files=`ls /config/snmp/tls/certs 2> /dev/null`;
+  if [ -n "$files" ]; then
+      /usr/bin/net-snmp-cert showcerts --subject --fingerprint
+  else
+    echo "You don't have any certificates. Put it in '/config/snmp/tls/certs' folder."
+  fi

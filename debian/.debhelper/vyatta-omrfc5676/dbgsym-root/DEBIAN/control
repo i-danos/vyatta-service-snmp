@@ -1,0 +1,12 @@
+Package: vyatta-omrfc5676-dbgsym
+Source: vyatta-service-snmp
+Version: 0.48.1
+Auto-Built-Package: debug-symbols
+Architecture: amd64
+Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
+Installed-Size: 29
+Depends: vyatta-omrfc5676 (= 0.48.1)
+Section: contrib/debug
+Priority: optional
+Description: debug symbols for vyatta-omrfc5676
+Build-Ids: 9e041fc487b4296d4b874261293bd456564007e6

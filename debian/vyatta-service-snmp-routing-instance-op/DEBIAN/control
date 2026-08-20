@@ -1,0 +1,11 @@
+Package: vyatta-service-snmp-routing-instance-op
+Source: vyatta-service-snmp
+Version: 0.48.1
+Architecture: all
+Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
+Installed-Size: 23
+Depends: vyatta-service-snmp, chvrf
+Section: contrib/net
+Priority: optional
+Description: SNMP routing instance template module
+ SNMP routing-instance specific templates

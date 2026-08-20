@@ -1,0 +1,2 @@
+#!/opt/vyatta/bin/cliexpr
+syntax:expression: pattern $VAR(@)"^[0-9A-F]{2}(:[0-9A-F]{2}){19}$" || exec "if [ -f /etc/snmp/tls/certs/$VAR(@) -o -f /config/snmp/tls/certs/$VAR(@) ];       then 	 exit 0;       else         exit 1;       fi" ; "value can be finger print key or filename in /etc/snmp/tls/certs folder"

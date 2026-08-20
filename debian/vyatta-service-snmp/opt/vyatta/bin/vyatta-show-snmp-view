@@ -1,0 +1,59 @@
+#! /usr/bin/perl
+#
+# Copyright (c) 2017-2019 AT&T Intellectual Property.
+# Copyright (c) 2015-2016 by Brocade Communications Systems, Inc.
+# All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+
+use strict;
+use warnings;
+use Getopt::Long;
+
+sub listNodes {
+    my $path = shift;
+    my @nodes =
+      split( ' ', `cli-shell-api listActiveNodes service snmp $path` );
+    return map { substr $_, 1, -1 } @nodes;
+}
+
+sub returnValue {
+    my $path  = shift;
+    my $value = `cli-shell-api returnActiveValue service snmp $path`;
+    return $value;
+}
+
+sub isExists {
+    my $path = shift;
+    system("cli-shell-api existsActive service snmp $path");
+    return !$?;
+}
+
+sub show_view {
+    print <<END;
+
+SNMP Views:
+
+END
+
+    foreach my $view ( listNodes("view") ) {
+        print "View : $view\nOIDs :\n";
+        foreach my $oid ( listNodes("view $view oid") ) {
+            my $exclude = '';
+            $exclude = ' exclude'
+              if ( isExists("view $view oid $oid exclude") );
+            my $mask = '';
+            if ( isExists("view $view oid $oid mask") ) {
+                my $value = returnValue("view $view oid $oid mask");
+                $mask = " mask $value";
+            }
+            print "       .$oid$exclude$mask\n";
+        }
+        print "\n";
+    }
+}
+
+show_view();
+

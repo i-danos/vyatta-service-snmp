@@ -1,0 +1,13 @@
+Package: vyatta-service-snmp
+Version: 0.48.1
+Architecture: amd64
+Maintainer: Vyatta Package Maintainers <DL-vyatta-help@att.com>
+Installed-Size: 469
+Depends: libsocket-perl, libsocket6-perl, snmp (>= 5.7.3+dfsg-2+vyatta7), snmpd (>= 5.7.3+dfsg-2+vyatta7), snmptrapd, libsnmp-extension-passpersist-perl, libsnmp-perl, libsnmp-vyatta-perl, vyatta-cfg, vyatta-system (>= 1.6.1), perl:any, python3, vyatta-dataplane-op-npf-op-0 | vyatta-dataplane-op-npf-op-1, vyatta-mibs-misc (>= 0.4), vyatta-omrfc5676, vyatta-platform-util, vyatta-entity-sensor-subagent
+Breaks: vyatta-cfg-system (<< 1.6.0), vyatta-op (<< 1.0)
+Replaces: vyatta-cfg-system (<< 1.6.0), vyatta-op (<< 1.0)
+Provides: libvyatta-ifmib-perl
+Section: contrib/net
+Priority: optional
+Description: SNMP helper scripts
+ Scripts to handle configuration of SNMP

@@ -1,0 +1,2 @@
+help: Show log for Simple Network Monitoring Protocol (SNMP)
+run: journalctl -a --no-pager -u snmpd

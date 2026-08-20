@@ -1,0 +1,2 @@
+help: Show SNMP MIB information
+run: ${vyatta_bindir}/vyatta-show-snmp.pl --mib

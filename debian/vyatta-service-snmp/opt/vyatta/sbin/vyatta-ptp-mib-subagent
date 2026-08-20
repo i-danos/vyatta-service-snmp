@@ -1,0 +1,632 @@
+#!/usr/bin/perl
+
+# Copyright (c) 2019, AT&T Intellectual Property. All rights reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+
+use strict;
+use warnings;
+
+use NetSNMP::ASN (':all');
+use Time::Local;
+use JSON qw( decode_json );
+
+use lib "/opt/vyatta/share/perl5";
+use Vyatta::MIBMisc qw(set_oid);
+use Vyatta::SNMPSubagent;
+use NetAddr::IP;
+
+my $snmp_subagent;
+
+use constant PTP_REFRESH => 60;    # seconds
+
+# PTPBASE-MIB (RFC 8173)
+my $PTPBASEMIBObjects = ".1.3.6.1.2.1.241.1";
+my $MIBSystemInfo     = set_oid( $PTPBASEMIBObjects, 1 );
+my $MIBClockInfo      = set_oid( $PTPBASEMIBObjects, 2 );
+
+my $SystemTable              = set_oid( $MIBSystemInfo, 1 );
+my $SystemEntry              = set_oid( $SystemTable,   1 );
+my $ptpDomainIndex           = set_oid( $SystemEntry,   1 );
+my $ptpInstanceIndex         = set_oid( $SystemEntry,   2 );
+my $ptpDomainClockPortsTotal = set_oid( $SystemEntry,   3 );
+
+my $SystemDomainTable          = set_oid( $MIBSystemInfo,     2 );
+my $SystemDomainEntry          = set_oid( $SystemDomainTable, 1 );
+my $SystemDomainClockTypeIndex = set_oid( $SystemDomainEntry, 1 );
+my $SystemDomainTotals         = set_oid( $SystemDomainEntry, 2 );
+
+my $SystemProfile = set_oid( $MIBSystemInfo, 3 );
+
+my $ClockCurrentDSTable       = set_oid( $MIBClockInfo,        1 );
+my $CurrentDSEntry            = set_oid( $ClockCurrentDSTable, 1 );
+my $CurrentDSDomainIndex      = set_oid( $CurrentDSEntry,      1 );
+my $CurrentDSClockTypeIndex   = set_oid( $CurrentDSEntry,      2 );
+my $CurrentDSInstanceIndex    = set_oid( $CurrentDSEntry,      3 );
+my $CurrentDSStepsRemoved     = set_oid( $CurrentDSEntry,      4 );
+my $CurrentDSOffsetFromMaster = set_oid( $CurrentDSEntry,      5 );
+my $CurrentDSMeanPathDelay    = set_oid( $CurrentDSEntry,      6 );
+
+my $ClockParentDSTable             = set_oid( $MIBClockInfo,       2 );
+my $ParentDSEntry                  = set_oid( $ClockParentDSTable, 1 );
+my $ParentDSDomainIndex            = set_oid( $ParentDSEntry,      1 );
+my $ParentDSClockTypeIndex         = set_oid( $ParentDSEntry,      2 );
+my $ParentDSInstanceIndex          = set_oid( $ParentDSEntry,      3 );
+my $ParentDSParentPortIdentity     = set_oid( $ParentDSEntry,      4 );
+my $ParentDSParentStats            = set_oid( $ParentDSEntry,      5 );
+my $ParentDSOffset                 = set_oid( $ParentDSEntry,      6 );
+my $ParentDSClockPhChRate          = set_oid( $ParentDSEntry,      7 );
+my $ParentDSGMClockIdentity        = set_oid( $ParentDSEntry,      8 );
+my $ParentDSGMClockPriority1       = set_oid( $ParentDSEntry,      9 );
+my $ParentDSGMClockPriority2       = set_oid( $ParentDSEntry,      10 );
+my $ParentDSGMClockQualityClass    = set_oid( $ParentDSEntry,      11 );
+my $ParentDSGMClockQualityAccuracy = set_oid( $ParentDSEntry,      12 );
+my $ParentDSGMClockQualityOffset   = set_oid( $ParentDSEntry,      13 );
+
+my $ClockDefaultDSTable      = set_oid( $MIBClockInfo,        3 );
+my $DefaultDSEntry           = set_oid( $ClockDefaultDSTable, 1 );
+my $DefaultDSDomainIndex     = set_oid( $DefaultDSEntry,      1 );
+my $DefaultDSClockTypeIndex  = set_oid( $DefaultDSEntry,      2 );
+my $DefaultDSInstanceIndex   = set_oid( $DefaultDSEntry,      3 );
+my $DefaultDSTwoStepFlag     = set_oid( $DefaultDSEntry,      4 );
+my $DefaultDSClockIdentity   = set_oid( $DefaultDSEntry,      5 );
+my $DefaultDSPriority1       = set_oid( $DefaultDSEntry,      6 );
+my $DefaultDSPriority2       = set_oid( $DefaultDSEntry,      7 );
+my $DefaultDSSlaveOnly       = set_oid( $DefaultDSEntry,      8 );
+my $DefaultDSQualityClass    = set_oid( $DefaultDSEntry,      9 );
+my $DefaultDSQualityAccuracy = set_oid( $DefaultDSEntry,      10 );
+my $DefaultDSQualityOffset   = set_oid( $DefaultDSEntry,      11 );
+
+my $ClockRunningTable      = set_oid( $MIBClockInfo,      4 );
+my $RunningEntry           = set_oid( $ClockRunningTable, 1 );
+my $RunningDomainIndex     = set_oid( $RunningEntry,      1 );
+my $RunningClockTypeIndex  = set_oid( $RunningEntry,      2 );
+my $RunningInstanceIndex   = set_oid( $RunningEntry,      3 );
+my $RunningState           = set_oid( $RunningEntry,      4 );
+my $RunningPacketsSent     = set_oid( $RunningEntry,      5 );
+my $RunningPacketsReceived = set_oid( $RunningEntry,      6 );
+
+my $ClockTimePropertiesDSTable     = set_oid( $MIBClockInfo,               5 );
+my $TimePropertiesDSEntry          = set_oid( $ClockTimePropertiesDSTable, 1 );
+my $TimePropertiesDSDomainIndex    = set_oid( $TimePropertiesDSEntry,      1 );
+my $TimePropertiesDSClockTypeIndex = set_oid( $TimePropertiesDSEntry,      2 );
+my $TimePropertiesDSInstanceIndex  = set_oid( $TimePropertiesDSEntry,      3 );
+my $TimePropertiesDSCurrentUTCOffsetValid =
+  set_oid( $TimePropertiesDSEntry, 4 );
+my $TimePropertiesDSCurrentUTCOffset = set_oid( $TimePropertiesDSEntry, 5 );
+my $TimePropertiesDSLeap59           = set_oid( $TimePropertiesDSEntry, 6 );
+my $TimePropertiesDSLeap61           = set_oid( $TimePropertiesDSEntry, 7 );
+my $TimePropertiesDSTimeTraceable    = set_oid( $TimePropertiesDSEntry, 8 );
+my $TimePropertiesDSFreqTraceable    = set_oid( $TimePropertiesDSEntry, 9 );
+my $TimePropertiesDSPTPTimescale     = set_oid( $TimePropertiesDSEntry, 10 );
+my $TimePropertiesDSSource           = set_oid( $TimePropertiesDSEntry, 11 );
+
+my $ClockPortTable             = set_oid( $MIBClockInfo,   7 );
+my $PortEntry                  = set_oid( $ClockPortTable, 1 );
+my $PortDomainIndex            = set_oid( $PortEntry,      1 );
+my $PortClockTypeIndex         = set_oid( $PortEntry,      2 );
+my $PortClockInstanceIndex     = set_oid( $PortEntry,      3 );
+my $PortNumberIndex            = set_oid( $PortEntry,      4 );
+my $PortName                   = set_oid( $PortEntry,      5 );
+my $PortRole                   = set_oid( $PortEntry,      6 );
+my $PortSyncTwoStep            = set_oid( $PortEntry,      7 );
+my $PortCurrentPeerAddressType = set_oid( $PortEntry,      8 );
+my $PortCurrentPeerAddress     = set_oid( $PortEntry,      9 );
+my $PortNumOfAssociatedPorts   = set_oid( $PortEntry,      10 );
+
+my $ClockPortDSTable              = set_oid( $MIBClockInfo,     8 );
+my $PortDSEntry                   = set_oid( $ClockPortDSTable, 1 );
+my $PortDSDomainIndex             = set_oid( $PortDSEntry,      1 );
+my $PortDSClockTypeIndex          = set_oid( $PortDSEntry,      2 );
+my $PortDSClockInstanceIndex      = set_oid( $PortDSEntry,      3 );
+my $PortDSPortNumberIndex         = set_oid( $PortDSEntry,      4 );
+my $PortDSName                    = set_oid( $PortDSEntry,      5 );
+my $PortDSPortIdentity            = set_oid( $PortDSEntry,      6 );
+my $PortDSlogAnnouncementInterval = set_oid( $PortDSEntry,      7 );
+my $PortDSAnnounceRctTimeout      = set_oid( $PortDSEntry,      8 );
+my $PortDSlogSyncInterval         = set_oid( $PortDSEntry,      9 );
+my $PortDSMinDelayReqInterval     = set_oid( $PortDSEntry,      10 );
+my $PortDSPeerDelayReqInterval    = set_oid( $PortDSEntry,      11 );
+my $PortDSDelayMech               = set_oid( $PortDSEntry,      12 );
+my $PortDSPeerMeanPathDelay       = set_oid( $PortDSEntry,      13 );
+my $PortDSGrantDuration           = set_oid( $PortDSEntry,      14 );
+my $PortDSPTPVersion              = set_oid( $PortDSEntry,      15 );
+
+my $ClockPortRunningTable         = set_oid( $MIBClockInfo,          9 );
+my $PortRunningEntry              = set_oid( $ClockPortRunningTable, 1 );
+my $PortRunningDomainIndex        = set_oid( $PortRunningEntry,      1 );
+my $PortRunningClockTypeIndex     = set_oid( $PortRunningEntry,      2 );
+my $PortRunningClockInstanceIndex = set_oid( $PortRunningEntry,      3 );
+my $PortRunningPortNumberIndex    = set_oid( $PortRunningEntry,      4 );
+my $PortRunningName               = set_oid( $PortRunningEntry,      5 );
+my $PortRunningState              = set_oid( $PortRunningEntry,      6 );
+my $PortRunningRole               = set_oid( $PortRunningEntry,      7 );
+my $PortRunningInterfaceIndex     = set_oid( $PortRunningEntry,      8 );
+my $PortRunningTransport          = set_oid( $PortRunningEntry,      9 );
+my $PortRunningEncapsulationType  = set_oid( $PortRunningEntry,      10 );
+my $PortRunningTxMode             = set_oid( $PortRunningEntry,      11 );
+my $PortRunningRxMode             = set_oid( $PortRunningEntry,      12 );
+my $PortRunningPacketsReceived    = set_oid( $PortRunningEntry,      13 );
+my $PortRunningPacketsSent        = set_oid( $PortRunningEntry,      14 );
+
+my $ClockPortAssociateTable       = set_oid( $MIBClockInfo,            11 );
+my $PortAssociateEntry            = set_oid( $ClockPortAssociateTable, 1 );
+my $PortCurrentDomainIndex        = set_oid( $PortAssociateEntry,      1 );
+my $PortCurrentClockTypeIndex     = set_oid( $PortAssociateEntry,      2 );
+my $PortCurrentClockInstanceIndex = set_oid( $PortAssociateEntry,      3 );
+my $PortCurrentPortNumberIndex    = set_oid( $PortAssociateEntry,      4 );
+my $PortAssociatePortIndex        = set_oid( $PortAssociateEntry,      5 );
+my $PortAssociateAddressType      = set_oid( $PortAssociateEntry,      6 );
+my $PortAssociateAddress          = set_oid( $PortAssociateEntry,      7 );
+my $PortAssociatePacketsSent      = set_oid( $PortAssociateEntry,      8 );
+my $PortAssociatePacketsReceived  = set_oid( $PortAssociateEntry,      9 );
+my $PortAssociateInErrors         = set_oid( $PortAssociateEntry,      10 );
+my $PortAssociateOutErrors        = set_oid( $PortAssociateEntry,      11 );
+
+my %PtpClockMechanismtype = (
+    "e2e"      => 1,
+    "p2p"      => 2,
+    "disabled" => 254,
+);
+
+my %PtpClockPortState = (
+    "initializing" => 1,
+    "faulty"       => 2,
+    "disabled"     => 3,
+    "listening"    => 4,
+    "preMaster"    => 5,
+    "master"       => 6,
+    "passive"      => 7,
+    "uncalibrated" => 8,
+    "slave"        => 9,
+);
+
+my %PtpClockProfileType = (
+    "default"        => 1,
+    "telecom"        => 2,
+    "vendorspecific" => 3,
+);
+
+my %PtpClockQualityAccuracyType = (
+    "reserved00"      => 0,
+    "nanosecond25"    => 32,
+    "nanosecond100"   => 33,
+    "nanosecond250"   => 34,
+    "microSec1"       => 35,
+    "microSec2dot5"   => 36,
+    "microSec10"      => 37,
+    "microSec25"      => 38,
+    "microSec100"     => 39,
+    "microSec250"     => 40,
+    "milliSec1"       => 41,
+    "milliSec2dot5"   => 42,
+    "milliSec10"      => 43,
+    "milliSec25"      => 44,
+    "milliSec100"     => 45,
+    "milliSec250"     => 46,
+    "second1"         => 47,
+    "second10"        => 48,
+    "secondGreater10" => 49,
+    "unknown"         => 254,
+    "reserved255"     => 255,
+);
+
+my %PtpClockQualityClassType = (
+    "clockclass6"  => 6,
+    "clockclass7"  => 7,
+    "clockclass13" => 13,
+    "clockclass14" => 14,
+    "clockclass52" => 52,
+    "clockclass58" => 58,
+);
+
+my %PtpClockRoleType = (
+    "master" => 1,
+    "slave"  => 2,
+);
+
+my %PtpClockStateType = (
+    "freerun"         => 1,
+    "holdover"        => 2,
+    "acquiring"       => 3,
+    "frequencyLocked" => 4,
+    "phaseAligned"    => 5,
+);
+
+my %MapServo2SNMPClockState = (
+    "acquiring"                     => $PtpClockStateType{'acquiring'},
+    "warmup"                        => $PtpClockStateType{'freerun'},
+    "fast-loop"                     => $PtpClockStateType{'freerun'},
+    "normal"                        => $PtpClockStateType{'freerun'},
+    "bridge"                        => $PtpClockStateType{'freerun'},
+    "holdover"                      => $PtpClockStateType{'holdover'},
+    "initial"                       => $PtpClockStateType{'acquiring'},
+    "unqualified"                   => $PtpClockStateType{'acquiring'},
+    "frequency-locked"              => $PtpClockStateType{'frequencyLocked'},
+    "time-locked"                   => $PtpClockStateType{'phaseAligned'},
+    "holdover-in-specification"     => $PtpClockStateType{'holdover'},
+    "holdover-out-of-specification" => $PtpClockStateType{'holdover'},
+    "freerun"                       => $PtpClockStateType{'freerun'},
+    "unknown"                       => $PtpClockStateType{'freerun'},
+);
+
+my %PtpClockTimeSourceType = (
+    "atomicClock"        => 16,
+    "gps"                => 32,
+    "terrestrialRadio"   => 48,
+    "ptp"                => 64,
+    "ntp"                => 80,
+    "handset"            => 96,
+    "other"              => 144,
+    "internalOscillator" => 160,
+);
+
+my %PtpClockTxModeType = (
+    "unicast"      => 1,
+    "multicast"    => 2,
+    "multicastmix" => 3,
+);
+
+my %PtpClockType = (
+    "ordinaryClock"    => 1,
+    "boundaryClock"    => 2,
+    "transparentClock" => 3,
+    "boundaryNode"     => 4,
+);
+
+my %TruthValue = (
+    1 => 1,
+    0 => 2,
+);
+
+sub get_ptp_data {
+
+    my $data = `/opt/vyatta/sbin/vyatta-ptp-state`;
+    return if ( !defined($data) );
+    my $results;
+    eval { $results = decode_json($data); };
+    return if ($@);
+    return $results;
+}
+
+sub get_ifindex {
+    my ($ifname) = @_;
+
+    open( my $fh, "<", "/sys/class/net/$ifname/ifindex" ) or return 0;
+    my $ifindex = <$fh>;
+    return chomp($ifindex);
+}
+
+sub get_ifaddr {
+    my ($ifname) = @_;
+
+    open( my $fh, "<", "/sys/class/net/$ifname/address" ) or return 0;
+    my $ifaddr = <$fh>;
+    return chomp($ifaddr);
+}
+
+sub get_addr_type {
+    my ($addr) = @_;
+
+    my $type;
+    return if ( !defined($addr) );
+    my $ip = new NetAddr::IP $addr;
+    return if ( !defined($ip) );
+    my $version = $ip->version();
+    if ( $version == 4 ) {
+        $type = "$MIBClockInfo.12.1";
+    }
+    elsif ( $version == 6 ) {
+        $type = "$MIBClockInfo.12.2";
+    }
+    return $type;
+}
+
+sub populate_MIB {
+    my $ptp_data = get_ptp_data();
+    return if ( !defined($ptp_data) );
+
+    my $instances   = $ptp_data->{'instance-list'};
+    my $clock_type  = $PtpClockType{boundaryClock};
+    my @num_domains = (0) x scalar(@$instances);
+    foreach my $e (@$instances) {
+        my $clock_instance = $e->{'instance-number'};
+        my $default_ds     = $e->{'default-ds'};
+        my $domain_number  = $default_ds->{'domain-number'};
+        my $num_ports      = $default_ds->{'number-ports'};
+        $num_domains[$domain_number]++;
+        my $index;
+
+        # SystemTable
+        $index = "$domain_number.$clock_instance";
+        $snmp_subagent->add_oid_unsigned( $ptpDomainIndex, $index,
+            $domain_number );
+        $snmp_subagent->add_oid_unsigned( $ptpInstanceIndex, $index,
+            $clock_instance );
+        $snmp_subagent->add_oid_gauge( $ptpDomainClockPortsTotal, $index,
+            $num_ports );
+
+        # SystemDomainTable
+        $index = "$domain_number.$clock_type";
+        $snmp_subagent->add_oid_int( $SystemDomainClockTypeIndex, $index,
+            $clock_type );
+        $snmp_subagent->add_oid_unsigned(
+            $SystemDomainTotals,          $index,
+            $num_domains[$domain_number], $index
+        );
+
+        # Clock profile
+        $snmp_subagent->add_tree_entry( $SystemProfile,
+            ASN_INTEGER, $PtpClockProfileType{default} );
+
+        $index = "$domain_number.$clock_type.$clock_instance";
+
+        # CurrentDSTable
+        my $current_ds = $e->{'current-ds'};
+        $snmp_subagent->add_oid_unsigned( $CurrentDSDomainIndex, $index,
+            $domain_number );
+        $snmp_subagent->add_oid_int( $CurrentDSClockTypeIndex, $index,
+            $clock_type );
+        $snmp_subagent->add_oid_unsigned( $CurrentDSInstanceIndex, $index,
+            $clock_instance );
+        $snmp_subagent->add_oid_unsigned( $CurrentDSStepsRemoved, $index,
+            $current_ds->{'steps-removed'} );
+        $snmp_subagent->add_oid_str( $CurrentDSOffsetFromMaster, $index,
+            $current_ds->{'offset-from-master'} );
+        $snmp_subagent->add_oid_str( $CurrentDSMeanPathDelay, $index,
+            $current_ds->{'mean-path-delay'},
+        );
+
+        # ParentDSTable
+        my $parent_ds = $e->{'parent-ds'};
+        my $clock_identity =
+          $parent_ds->{'parent-port-identity'}->{'clock-identity'};
+        my $port_number = $parent_ds->{'parent-port-identity'}->{'port-number'};
+        $snmp_subagent->add_oid_unsigned( $ParentDSDomainIndex, $index,
+            $domain_number );
+        $snmp_subagent->add_oid_int( $ParentDSClockTypeIndex, $index,
+            $clock_type );
+        $snmp_subagent->add_oid_unsigned( $ParentDSInstanceIndex, $index,
+            $clock_instance );
+        $snmp_subagent->add_oid_str( $ParentDSParentPortIdentity, $index,
+            $clock_identity );
+        $snmp_subagent->add_oid_int( $ParentDSParentStats, $index,
+            $TruthValue{ $parent_ds->{'parent-stats'} } );
+        $snmp_subagent->add_oid_int( $ParentDSOffset, $index,
+            $parent_ds->{'observed-parent-offset-scaled-log-variance'} );
+        $snmp_subagent->add_oid_int( $ParentDSClockPhChRate, $index,
+            $parent_ds->{'observed-parent-clock-phase-change-rate'} );
+        $snmp_subagent->add_oid_str( $ParentDSGMClockIdentity, $index,
+            $parent_ds->{'grandmaster-identity'} );
+        $snmp_subagent->add_oid_unsigned( $ParentDSGMClockPriority1, $index,
+            $parent_ds->{'grandmaster-priority1'} );
+        $snmp_subagent->add_oid_unsigned( $ParentDSGMClockPriority2, $index,
+            $parent_ds->{'grandmaster-priority2'} );
+        $snmp_subagent->add_oid_int( $ParentDSGMClockQualityClass, $index,
+            $parent_ds->{'grandmaster-clock-quality'}->{'clock-class'} );
+        $snmp_subagent->add_oid_int( $ParentDSGMClockQualityAccuracy,
+            $index,
+            $parent_ds->{'grandmaster-clock-quality'}->{'clock-accuracy'} );
+        $snmp_subagent->add_oid_unsigned( $ParentDSGMClockQualityOffset, $index,
+            $parent_ds->{'grandmaster-clock-quality'}
+              ->{'offset-scaled-log-variance'} );
+
+        # DefaultDSTable
+        my $two_step_flag = $TruthValue{ $default_ds->{'two-step-flag'} };
+        $snmp_subagent->add_oid_unsigned( $DefaultDSDomainIndex, $index,
+            $domain_number );
+        $snmp_subagent->add_oid_int( $DefaultDSClockTypeIndex, $index,
+            $clock_type );
+        $snmp_subagent->add_oid_unsigned( $DefaultDSInstanceIndex, $index,
+            $clock_instance );
+        $snmp_subagent->add_oid_int( $DefaultDSTwoStepFlag, $index,
+            $two_step_flag );
+        $snmp_subagent->add_oid_str( $DefaultDSClockIdentity, $index,
+            $default_ds->{'clock-identity'} );
+        $snmp_subagent->add_oid_unsigned( $DefaultDSPriority1, $index,
+            $default_ds->{'priority1'} );
+        $snmp_subagent->add_oid_unsigned( $DefaultDSPriority2, $index,
+            $default_ds->{'priority2'} );
+        $snmp_subagent->add_oid_int( $DefaultDSSlaveOnly, $index,
+            $TruthValue{ $default_ds->{'slave-only'} } );
+        $snmp_subagent->add_oid_int( $DefaultDSQualityClass, $index,
+            $default_ds->{'clock-quality'}->{'clock-class'} );
+        $snmp_subagent->add_oid_int( $DefaultDSQualityAccuracy, $index,
+            $default_ds->{'clock-quality'}->{'clock-accuracy'} );
+        $snmp_subagent->add_oid_int( $DefaultDSQualityOffset, $index,
+            $default_ds->{'clock-quality'}->{'offset-scaled-log-variance'} );
+
+        # ClockRunningTable
+        my $servo_ds = $e->{'servo-ds'};
+        $snmp_subagent->add_oid_unsigned( $RunningDomainIndex, $index,
+            $domain_number );
+        $snmp_subagent->add_oid_int( $RunningClockTypeIndex, $index,
+            $clock_type );
+        $snmp_subagent->add_oid_unsigned( $RunningInstanceIndex, $index,
+            $clock_instance );
+        $snmp_subagent->add_oid_int( $RunningState, $index,
+            $MapServo2SNMPClockState{$servo_ds->{'servo-state'} } );
+        $snmp_subagent->add_oid_counter64( $RunningPacketsSent, $index,
+            $e->{'counters'}->{'transmitted-packets'} );
+        $snmp_subagent->add_oid_counter64( $RunningPacketsReceived, $index,
+            $e->{'counters'}->{'received-packets'} );
+
+        # ClockTimePropertiesDSTable
+        my $tp_ds = $e->{'time-properties-ds'};
+        $snmp_subagent->add_oid_unsigned( $TimePropertiesDSDomainIndex, $index,
+            $domain_number );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSClockTypeIndex,
+            $index, $clock_type );
+        $snmp_subagent->add_oid_unsigned( $TimePropertiesDSInstanceIndex,
+            $index, $clock_instance );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSCurrentUTCOffsetValid,
+            $index, $TruthValue{ $tp_ds->{'current-utc-offset-valid'} } );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSCurrentUTCOffset,
+            $index, $tp_ds->{'current-utc-offset'} );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSLeap59, $index,
+            $TruthValue{ $tp_ds->{'leap59'} } );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSLeap61, $index,
+            $TruthValue{ $tp_ds->{'leap61'} } );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSTimeTraceable,
+            $index, $TruthValue{ $tp_ds->{'time-traceable'} } );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSFreqTraceable,
+            $index, $TruthValue{ $tp_ds->{'frequency-traceable'} } );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSPTPTimescale, $index,
+            $TruthValue{ $tp_ds->{'ptp-timescale'} } );
+        $snmp_subagent->add_oid_int( $TimePropertiesDSSource,
+            $index, $tp_ds->{'time-source'} );
+
+        my $port_ds_list = $e->{'port-ds-list'};
+        foreach my $port_ds (@$port_ds_list) {
+            my $port_number    = $port_ds->{'port-number'};
+            my $role           = $PtpClockRoleType{ $port_ds->{'port-state'} };
+            my $peer_list      = $port_ds->{'peers'};
+            my @peers          = @$peer_list if ( defined($peer_list) );
+            my $num_asso_ports = 0;
+            my $current_peer_addr;
+            my $peer_addr_type;
+            if (@peers) {
+                $num_asso_ports = scalar(@peers);
+                my $current_peer = $peers[0];
+                $current_peer_addr = $current_peer->{'address'};
+                $peer_addr_type    = get_addr_type($current_peer_addr);
+            }
+
+            $index = "$domain_number.$clock_type.$clock_instance.$port_number";
+
+            # ClockPortTable
+            $snmp_subagent->add_oid_unsigned( $PortDomainIndex, $index,
+                $domain_number );
+            $snmp_subagent->add_oid_int( $PortClockTypeIndex, $index,
+                $clock_type );
+            $snmp_subagent->add_oid_unsigned( $PortClockInstanceIndex, $index,
+                $clock_instance );
+            $snmp_subagent->add_oid_unsigned( $PortNumberIndex, $index,
+                $port_number );
+            $snmp_subagent->add_oid_str( $PortName, $index,
+                $port_ds->{'underlying-interface'} );
+            $snmp_subagent->add_oid_int( $PortRole, $index, $role )
+              if ( defined($role) );
+            $snmp_subagent->add_oid_int( $PortSyncTwoStep, $index,
+                $two_step_flag );
+
+            if ( defined($current_peer_addr) && defined($peer_addr_type) ) {
+                $snmp_subagent->add_oid_objid( $PortCurrentPeerAddressType,
+                    $index, $peer_addr_type );
+                $snmp_subagent->add_oid_str( $PortCurrentPeerAddress,
+                    $index, $current_peer_addr );
+            }
+            $snmp_subagent->add_oid_gauge( $PortNumOfAssociatedPorts, $index,
+                $num_asso_ports )
+              if ( defined($num_asso_ports) );
+
+            # ClockPortDSTable
+            $snmp_subagent->add_oid_unsigned( $PortDSDomainIndex, $index,
+                $domain_number );
+            $snmp_subagent->add_oid_int( $PortDSClockTypeIndex, $index,
+                $clock_type );
+            $snmp_subagent->add_oid_unsigned( $PortDSClockInstanceIndex,
+                $index, $clock_instance );
+            $snmp_subagent->add_oid_unsigned( $PortDSPortNumberIndex, $index,
+                $port_number );
+            $snmp_subagent->add_oid_str( $PortDSName, $index,
+                $port_ds->{'underlying-interface'} );
+            $snmp_subagent->add_oid_str( $PortDSPortIdentity, $index,
+                $port_ds->{'underlying-interface'} );
+            $snmp_subagent->add_oid_int( $PortDSlogAnnouncementInterval,
+                $index, $port_ds->{'log-announce-interval'} );
+            $snmp_subagent->add_oid_int( $PortDSAnnounceRctTimeout, $index,
+                $port_ds->{'announce-receipt-timeout'} );
+            $snmp_subagent->add_oid_int( $PortDSlogSyncInterval, $index,
+                $port_ds->{'log-sync-interval'} );
+            $snmp_subagent->add_oid_int( $PortDSMinDelayReqInterval, $index,
+                $port_ds->{'log-min-delay-req-interval'} );
+            $snmp_subagent->add_oid_int( $PortDSPeerDelayReqInterval, $index,
+                $port_ds->{'log-min-pdelay-req-interval'} );
+            $snmp_subagent->add_oid_int( $PortDSDelayMech, $index,
+                $PtpClockMechanismtype{$port_ds->{'delay-mechanism'}} );
+            $snmp_subagent->add_oid_str( $PortDSPeerMeanPathDelay, $index,
+                $port_ds->{'peer-mean-path-delay'} );
+            $snmp_subagent->add_oid_unsigned( $PortDSGrantDuration, $index,
+                int(300) );
+            $snmp_subagent->add_oid_unsigned( $PortDSPTPVersion, $index,
+                $port_ds->{'version-number'} );
+
+            my $ifname    = $port_ds->{'underlying-interface'};
+            my $ifindex   = get_ifindex($ifname);
+            my $ifaddr    = get_ifaddr($ifname);
+            my $addr_type = get_addr_type($ifaddr);
+
+            # ClockPortRunningTable
+            $snmp_subagent->add_oid_unsigned( $PortRunningDomainIndex, $index,
+                $domain_number );
+            $snmp_subagent->add_oid_int( $PortRunningClockTypeIndex, $index,
+                $clock_type );
+            $snmp_subagent->add_oid_unsigned( $PortRunningClockInstanceIndex,
+                $index, $clock_instance );
+            $snmp_subagent->add_oid_unsigned( $PortRunningPortNumberIndex,
+                $index, $port_number );
+            $snmp_subagent->add_oid_str( $PortRunningName, $index, $ifname );
+            $snmp_subagent->add_oid_int( $PortRunningState, $index,
+                $port_ds->{'port-state'} );
+            $snmp_subagent->add_oid_int( $PortRunningRole, $index, $role )
+              if ( defined($role) );
+            $snmp_subagent->add_oid_int( $PortRunningInterfaceIndex, $index,
+                $ifindex );
+            $snmp_subagent->add_oid_objid( $PortRunningTransport, $index,
+                $addr_type )
+              if ( defined($addr_type) );
+            $snmp_subagent->add_oid_objid( $PortRunningEncapsulationType,
+                $index, "$MIBClockInfo.13.2" );
+            $snmp_subagent->add_oid_int( $PortRunningTxMode, $index,
+                $PtpClockTxModeType{unicast} );
+            $snmp_subagent->add_oid_int( $PortRunningRxMode, $index,
+                $PtpClockTxModeType{unicast} );
+            $snmp_subagent->add_oid_counter64( $PortRunningPacketsReceived,
+                $index, $port_ds->{'counters'}->{'received-packets'} );
+            $snmp_subagent->add_oid_counter64( $PortRunningPacketsSent, $index,
+                $port_ds->{'counters'}->{'transmitted-packets'} );
+
+            # ClockPortAssociateTable
+            foreach my $peer (@peers) {
+                my $addr       = $peer->{address};
+                my $addr_type  = get_addr_type($addr);
+                my $port_index = $peer->{'peer-number'};
+                $index =
+"$domain_number.$clock_type.$clock_instance.$port_number.$port_index";
+                $port_index++;
+                $snmp_subagent->add_oid_unsigned( $PortCurrentDomainIndex,
+                    $index, $domain_number );
+                $snmp_subagent->add_oid_int( $PortCurrentClockTypeIndex,
+                    $index, $clock_type );
+                $snmp_subagent->add_oid_unsigned(
+                    $PortCurrentClockInstanceIndex,
+                    $index, $clock_instance );
+                $snmp_subagent->add_oid_unsigned( $PortCurrentPortNumberIndex,
+                    $index, $port_number );
+                $snmp_subagent->add_oid_unsigned( $PortAssociatePortIndex,
+                    $index, $port_index );
+                $snmp_subagent->add_oid_objid( $PortAssociateAddressType,
+                    $index, $addr_type )
+                  if ( defined($addr_type) );
+                $snmp_subagent->add_oid_str( $PortAssociateAddress, $index,
+                    $addr );
+                $snmp_subagent->add_oid_counter64( $PortAssociatePacketsSent,
+                    $index, $peer->{'counters'}->{'transmitted-packets'} );
+                $snmp_subagent->add_oid_counter64(
+                    $PortAssociatePacketsReceived, $index,
+                    $peer->{'counters'}->{'received-packets'} );
+                $snmp_subagent->add_oid_counter64( $PortAssociateInErrors,
+                    $index, $peer->{'counters'}->{'discarded-packets'} );
+                $snmp_subagent->add_oid_counter64( $PortAssociateOutErrors,
+                    $index, $peer->{'counters'}->{'discarded-packets'} );
+            }
+        }
+    }
+}
+
+$snmp_subagent = Vyatta::SNMPSubagent->new("vyatta-ptp-mib-subagent");
+
+$snmp_subagent->register_oid( $PTPBASEMIBObjects, \&populate_MIB, PTP_REFRESH );
+
+$snmp_subagent->run();

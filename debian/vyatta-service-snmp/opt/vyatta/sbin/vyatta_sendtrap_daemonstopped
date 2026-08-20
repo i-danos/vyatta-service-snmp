@@ -1,0 +1,143 @@
+#!/usr/bin/perl
+
+# **** License ****
+#
+# Copyright (c) 2020 AT&T Intellectual Property.
+#   All Rights Reserved.
+#
+# SPDX-License-Identifier: GPL-2.0-only
+#
+# **** End License ****
+
+use strict;
+use warnings;
+use Getopt::Long;
+
+use lib "/opt/vyatta/share/perl5";
+use Vyatta::VrfManager qw(get_vrf_list);
+
+my $SNMPD_CONF_FILE = '/etc/snmp/snmpd.conf';
+
+my @vrf_list = ();
+my %context_vrf_map;
+my %vrf_community_map;
+my %vrf_trapcmd_map;
+
+sub parse_snmpd_config {
+    open( my $in, '<', $SNMPD_CONF_FILE )
+      or die "Error opening $SNMPD_CONF_FILE for reading: $!\n";
+
+    $context_vrf_map{"\'\'"} = 'default';
+    while ( my $line = <$in> ) {
+        my $cmd;
+        my $addr;
+        my $trapcomm;
+        my $vrf;
+
+        chomp $line;
+        my @fields = split /\s+/, $line;
+        my $len = scalar(@fields);
+        if ( defined( $fields[0] ) && $fields[0] eq "context" ) {
+            $context_vrf_map{ $fields[1] } = $fields[2];
+        }
+        elsif ( defined( $fields[0] )
+            && ( $fields[0] eq "rocommunity" || $fields[0] eq "rwcommunity" ) )
+        {
+            my $community = $fields[1];
+            if (   $len >= 6
+                && $fields[ $len - 3 ] eq "-V"
+                && defined( $fields[ $len - 1 ] ) )
+            {
+                $vrf_community_map{ $fields[ $len - 1 ] } = $community;
+            }
+            else {
+                $vrf_community_map{'default'} = $community;
+            }
+        }
+        elsif ( defined( $fields[0] ) && $fields[0] eq "trap2sink" ) {
+            if ( $fields[1] eq '-n' ) {
+                next unless defined( $fields[2] );
+                ( $addr, $vrf ) = split /:([^:]+)$/, $fields[3];
+                $trapcomm = $fields[4] if ( defined( $fields[4] ) );
+                $cmd = join( ' ', "/usr/bin/snmptrap", "-v2c -n $fields[2]" );
+            }
+            else {
+                $addr     = $fields[1];
+                $trapcomm = $fields[2] if ( defined( $fields[2] ) );
+                $cmd      = join( ' ', "/usr/bin/snmptrap", "-v2c" );
+            }
+            $vrf = 'default' unless defined($vrf);
+            $trapcomm = $vrf_community_map{$vrf} unless defined($trapcomm);
+            next unless ( defined($addr) && defined($trapcomm) );
+            $cmd = join( ' ', $cmd, "-c", $trapcomm, $addr );
+            push @{ $vrf_trapcmd_map{$vrf} }, $cmd;
+        }
+        elsif ( defined( $fields[0] ) && $fields[0] eq "trapsess" ) {
+            if ( $fields[3] eq "-n" ) {
+                ( $addr, $vrf ) = split /:([^:]+)$/, $fields[ $len - 1 ];
+            }
+            else {
+                $addr = $fields[ $len - 1 ];
+            }
+            next unless ( defined($addr) );
+            $vrf = 'default' if ( !defined($vrf) );
+            $cmd = "@fields[1 .. $len-2]";
+            $cmd = join( ' ', "/usr/bin/snmptrap", $cmd, $addr );
+            push @{ $vrf_trapcmd_map{$vrf} }, $cmd;
+        }
+    }
+}
+
+sub get_current_vrfs_list {
+    my @vrfs = get_vrf_list();
+    foreach my $vrf ( @vrfs ) {
+        my ( $vrf_name, $vrf_id ) = split( " ", $vrf, 2 );
+        next if ( !defined($vrf_name) );
+        push @vrf_list, $vrf_name;
+    }
+}
+
+my ($daemon);
+
+GetOptions( "daemon=s" => \$daemon, );
+
+die "undefined daemon" if !defined $daemon;
+
+my $OID_mteTriggerFired   = 'DISMAN-EVENT-MIB::mteTriggerFired';
+my $OID_mteHotTrigger     = 'DISMAN-EVENT-MIB::mteHotTrigger.0';
+my $OID_mteHotContextName = 'DISMAN-EVENT-MIB::mteHotContextName.0';
+
+exit 0 if ( !-e $SNMPD_CONF_FILE );
+
+parse_snmpd_config();
+get_current_vrfs_list();
+
+push @vrf_list, "\'\'";
+
+my $trigger_varbind =
+  join( ' ', $OID_mteHotTrigger, "s", "\'$daemon daemon stopped\'" );
+my $varbindlist = join( ' ', "\'\' ", $OID_mteTriggerFired, $trigger_varbind );
+
+for my $trap_context (@vrf_list) {
+    if ( defined($trap_context) ) {
+        my $context_varbind =
+          join( ' ', $OID_mteHotContextName, "s", $trap_context );
+        my $trap_vrf = $context_vrf_map{$trap_context};
+        next unless defined($trap_vrf);
+        my $trapcmds = $vrf_trapcmd_map{$trap_vrf};
+        next unless defined($trapcmds);
+        for my $trap_cmd ( @{$trapcmds} ) {
+            if ( defined($trap_cmd) ) {
+                if ( $trap_vrf ne 'default' ) {
+                    system(
+"/usr/sbin/chvrf $trap_context $trap_cmd $varbindlist $context_varbind"
+                    );
+                }
+                else {
+                    system("$trap_cmd $varbindlist $context_varbind");
+                }
+            }
+        }
+    }
+}
+

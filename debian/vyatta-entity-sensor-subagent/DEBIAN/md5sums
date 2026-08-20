@@ -1,0 +1,5 @@
+43d00a08207e0ca888f6fc7a5e56e965  opt/vyatta/sbin/entity-sensor-ipmi
+e016142fd2b3d2a0fa0517d1bab9f6b8  opt/vyatta/sbin/sensortrap
+408027564fd492ecb79b772628d213e1  usr/lib/systemd/system/snmp-entsensor-trap.service
+89fccff189681bae14aee150cef48202  usr/share/doc/vyatta-entity-sensor-subagent/changelog.gz
+0c503078fe440bdb76eebe8b4e2b081c  usr/share/doc/vyatta-entity-sensor-subagent/copyright

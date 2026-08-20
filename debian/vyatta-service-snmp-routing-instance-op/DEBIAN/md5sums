@@ -1,0 +1,4 @@
+48e0d490e52e963cf92909a27e70681c  opt/vyatta/share/vyatta-op/templates/show/snmp/community-mapping/node.def
+cd78ca673aea2618dac135ba232ebd0b  opt/vyatta/share/vyatta-op/templates/show/snmp/routing-instance/node.def
+89fccff189681bae14aee150cef48202  usr/share/doc/vyatta-service-snmp-routing-instance-op/changelog.gz
+0c503078fe440bdb76eebe8b4e2b081c  usr/share/doc/vyatta-service-snmp-routing-instance-op/copyright

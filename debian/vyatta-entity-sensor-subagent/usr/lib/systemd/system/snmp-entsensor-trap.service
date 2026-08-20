@@ -1,0 +1,10 @@
+[Unit]
+Description=Vyatta Send Entity Sensor Traps
+After=network.target snmpd.service
+
+[Service]
+Type=simple
+ExecStart=/opt/vyatta/sbin/entity-sensor-ipmi
+
+[Install]
+WantedBy=multi-user.service

@@ -1,0 +1,746 @@
+module vyatta-service-snmp-v1 {
+	namespace "urn:vyatta.com:mgmt:vyatta-service-snmp:1";
+	prefix vyatta-service-snmp-v1;
+
+	import configd-v1 {
+		prefix configd;
+	}
+	import vyatta-services-v1 {
+		prefix service;
+	}
+	import vyatta-system-syslog-v1 {
+		prefix syslog;
+	}
+	import vyatta-types-v1 {
+		prefix types;
+	}
+
+	organization "AT&T Inc.";
+	contact
+		"AT&T
+		 Postal: 208 S. Akard Street
+		 Dallas, TX 75202
+		 Web: www.att.com";
+
+	description
+		"Copyright (c) 2018-2019, AT&T Intellectual Property.
+		 All rights reserved.
+
+		 Copyright (c) 2016 by Brocade Communications Systems, Inc.
+		 All rights reserved.
+
+		 Redistribution and use in source and binary forms, with or
+		 without modification, are permitted provided that the following
+		 conditions are met:
+
+		 1. Redistributions of source code must retain the above copyright
+			notice, this list of conditions and the following disclaimer.
+		 2. Redistributions in binary form must reproduce the above
+			copyright notice, this list of conditions and the following
+			disclaimer in the documentation and/or other materials provided
+			with the distribution.
+		 3. Neither the name of the copyright holder nor the names of its
+			contributors may be used to endorse or promote products derived
+			from this software without specific prior written permission.
+
+		 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+		 'AS IS' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+		 LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+		 FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+		 COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+		 INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+		 BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+		 LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+		 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+		 LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+		 ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+		 POSSIBILITY OF SUCH DAMAGE.
+
+		 SPDX-License-Identifier: BSD-3-Clause
+
+		 SNMP configuration";
+
+	revision 2019-10-24 {
+		description "Add configd:secret to snmp community strings.
+					 Normalise network prefixes.";
+	}
+
+	revision 2019-04-24 {
+		description "Combine the two validation scripts into one script.";
+	}
+
+	revision 2018-11-15 {
+		description "Add entity-state notification configuration.
+			     Remove ^ start line anchor from pattern";
+	}
+
+	revision 2018-10-09 {
+		description "Add sysObjectID configuration.
+			     Add RFC 6021 object-identifier type.";
+	}
+
+	revision 2018-09-08 {
+		description "Add auth-failure notification configuration.";
+	}
+
+	revision 2018-07-16 {
+		description "Add entity-sensor notification configuration.";
+	}
+
+	revision 2018-07-11 {
+		description "Add DISMAN-PING notification configuration.
+			     Add notification to syslog configuration.
+			     Add syslog to notification configuration.";
+	}
+
+	revision 2015-08-18 {
+		description "Initial revision of version 1.";
+	}
+
+	typedef object-identifier {
+		type string {
+			pattern '(([0-1](\.[1-3]?[0-9]))|(2\.(0|([1-9]\d*))))'
+			      + '(\.(0|([1-9]\d*)))*';
+		}
+		description
+			"The object-identifier type represents administratively
+			assigned names in a registration-hierarchical-name tree.
+
+			Values of this type are denoted as a sequence of numerical
+			non-negative sub-identifier values.  Each sub-identifier
+			value MUST NOT exceed 2^32-1 (4294967295).  Sub-identifiers
+			are separated by single dots and without any intermediate
+			whitespace.
+
+			The ASN.1 standard restricts the value space of the first
+			sub-identifier to 0, 1, or 2.  Furthermore, the value space
+			of the second sub-identifier is restricted to the range
+			0 to 39 if the first sub-identifier is 0 or 1.  Finally,
+			the ASN.1 standard requires that an object identifier
+			has always at least two sub-identifiers.  The pattern
+			captures these restrictions.
+
+			Although the number of sub-identifiers is not limited,
+			module designers should realize that there may be
+			implementations that stick with the SMIv2 limit of 128
+			sub-identifiers.
+
+			This type is a superset of the SMIv2 OBJECT IDENTIFIER type
+			since it is not restricted to 128 sub-identifiers.  Hence,
+			this type SHOULD NOT be used to represent the SMIv2 OBJECT
+			IDENTIFIER type, the object-identifier-128 type SHOULD be
+			used instead.";
+	}
+
+	augment /service:service {
+		container snmp {
+			presence "true";
+			configd:priority "980";
+			configd:help "Simple Network Management Protocol (SNMP)";
+			configd:validate "/opt/vyatta/sbin/vyatta-snmp-validate";
+			configd:create "/opt/vyatta/share/tmplscripts/service/snmp/configd_create.sh";
+			configd:end "/opt/vyatta/share/tmplscripts/service/snmp/configd_end.sh";
+			leaf description {
+				type string;
+				configd:help "Description information";
+			}
+			list trap-target {
+				configd:help "Address of trap target";
+				key "tagnode";
+				leaf tagnode {
+					type union {
+						type types:ipv4-address;
+						type types:ipv6-address;
+					}
+					configd:help "Address of trap target";
+				}
+				leaf community {
+					type string;
+					configd:help "Community used when sending trap information";
+					configd:secret true;
+				}
+				leaf port {
+					type uint32 {
+						range 1..65535 {
+							error-message "Port number must be in range 1 to 65535";
+						}
+					}
+					configd:help "Destination port used for trap notification";
+				}
+			}
+			leaf contact {
+				type string;
+				configd:help "Contact information";
+			}
+			leaf sysobjectid {
+				configd:help "Advertised sysObjectID string";
+				description "The advertised sysObjectID sring.  This can be used to override the
+					     default OID used by the system to identify itself.  The default OID
+					     depends on the underlying hardware.  If this is a known platform, we
+					     default to specific values to identify the platform uniquely to agents.
+					     For unspecific hardware, we default to OID 1.3.6.1.4.1.74.1.32.";
+				type object-identifier {
+					pattern '1\.3\.6\.1\.4\.1\.74\..*' {
+						error-message "OID must be be within the AT&T private enterprise";
+					}
+				}
+			}
+			leaf trap-source {
+				type union {
+					type types:ipv4-address;
+					type types:ipv6-address;
+				}
+				configd:help "SNMP trap source address";
+			}
+			list community {
+				configd:help "Community name [REQUIRED]";
+				key "tagnode";
+
+				leaf tagnode {
+					type string {
+						pattern '[^%]+' {
+							error-message "Community string may not contain %";
+						}
+					}
+					configd:help "Community name [REQUIRED]";
+					configd:secret true;
+				}
+				leaf-list client {
+					type union {
+						type types:ipv4-address;
+						type types:ipv6-address;
+					}
+					ordered-by "user";
+					configd:help "IP address of SNMP client allowed to contact system";
+				}
+				leaf authorization {
+					type enumeration {
+						enum "ro";
+						enum "rw";
+					}
+					default "ro";
+					configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/community/authorization/configd_allowed.sh";
+					configd:help "Authorization type (rw or ro) (default: ro)";
+				}
+				leaf-list network {
+					type union {
+						type types:ipv4-prefix {
+							configd:normalize "normalize ipv4-prefix";
+						}
+						type types:ipv6-prefix {
+							configd:normalize "normalize ipv6-prefix";
+						}
+					}
+					ordered-by "user";
+					configd:help "Subnet of SNMP client(s) allowed to contact system";
+				}
+				leaf view {
+					type string;
+					configd:help "Defines the name of view";
+					configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/community/view/configd_allowed.sh";
+				}
+			}
+
+			container notification {
+				configd:help "SNMP notifications";
+				description "Enable notifications";
+
+				container syslog {
+					description "Enable SYSLOG specific SNMP notifications";
+					configd:help "SYSLOG notifications";
+					configd:end "syslog-to-notification-end";
+					presence "SYSLOG notifications are configured";
+					leaf all {
+						type empty;
+						description "Enable SYSLOG specific SNMP notifications.  Setting this
+							     enables the generation of syslogMsgNotification notifications
+							     when a SYSLOG message matches the configured SYSLOG filters.";
+						configd:help "Enable SYSLOG notifications";
+					}
+					must "count(filters/*) > 1" {
+						error-message "There must be at least one SYSLOG message filter configured.";
+					}
+					list filters {
+						description "A list of filters consisting of a facility and level
+							     that will be used to match the SYSLOG mesasges that
+							     should be converted a notification. SYSLOG contains
+							     general logging for the system and the user may wish
+							     to limit the notifications to higher priority messages.";
+						configd:help "SYSLOG messages to convert to SNMP notifications";
+						key "facility";
+						leaf facility {
+							configd:help "Match SYSLOG messages using this facility.";
+							description "This filter matches SYSLOG messages using this facility.";
+							type syslog:facility;
+						}
+						leaf level {
+							configd:help "Match SYSLOG messages at this level or above.";
+							description "This filter matches SYSLOG messages at this level or above.";
+							type syslog:level;
+							mandatory true;
+						}
+					}
+				}
+
+				container ping {
+					description "DISMAN-PING SNMP notifications.";
+					configd:help "DISMAN-PING SNMP notifications";
+					leaf all {
+						type empty;
+						description "Enable all DISMAN-PING specific notifications";
+						configd:help "Enable all DISMAN-PING specific notifications";
+					}
+				}
+
+				container entity-sensor {
+					description "Enable ENTITY SENSOR specific SNMP Notifications";
+					configd:help "ENTITY SENSOR Notifications";
+					leaf all {
+						type empty;
+						description "Enable ENTITY SENSOR specific SNMP Notifications. Setting
+							     this enables SNMP notifications defined in entity sensor
+							     standard and AT&T proprietary MIBs; traps are generated
+							     from events logged by Baseboard Management Controller (BMC)
+							     in the System Event Log (SEL).";
+						configd:help "ENTITY SENSOR Notifications";
+					}
+				}
+
+				container entity-state {
+					description "Enable ENTITY STATE specific SNMP Notifications";
+					configd:help "ENTITY STATE Notifications";
+					leaf all {
+						type empty;
+						description "Enable ENTITY STATE specific SNMP Notifications. Setting
+							     this enables SNMP notifications defined in entity state
+							     standard and AT&T proprietary MIBs; traps are generated
+							     from events logged by Baseboard Management Controller (BMC)
+							     in the System Event Log (SEL).";
+						configd:help "ENTITY STATE Notifications";
+					}
+				}
+
+				container auth-failure {
+					description "Enable SNMP V2/V3 Authentication Failure Notifications";
+					configd:help "SNMP V2/V3 AUTHFAIL Notifications";
+					leaf all {
+						type empty;
+						description "Enable SNMP V2/V3 Authentication Failure Notifications";
+						configd:help "SNMP V2/V3 AUTHFAIL Notifications";
+					}
+				}
+			}
+
+			container notification-to-syslog {
+				description "Log SNMP notifications to the local syslog daemon. If
+					     a facility and level are not set, daemon.err is used
+					     when logging the SNMP notifications.";
+				configd:help "Log notifications to syslog";
+				leaf enable {
+					type empty;
+					description "Enable SNMP notification (trap) logging.";
+					configd:help "Enable SNMP trap logging";
+				}
+				leaf facility {
+					configd:help "Syslog facility used when logging";
+					description "Syslog facility used when logging";
+					type syslog:facility-no-all;
+					default "daemon";
+				}
+				leaf level {
+					configd:help "Syslog level used when logging";
+					description "Syslog level used when logging";
+					type syslog:level;
+					default "err";
+				}
+			}
+
+			list view {
+				configd:help "Specifies the view with name viewname";
+				configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/view/configd_validate1.cli";
+				key "tagnode";
+				leaf tagnode {
+					type string {
+						pattern '[^\(\)\|&-]+' {
+							error-message "illegal characters in name";
+						}
+						configd:syntax "/opt/vyatta/share/tmplscripts/service/snmp/view/configd_syntax1.cli";
+					}
+					configd:help "Specifies the view with name viewname";
+				}
+				list oid {
+					configd:help "Specifies the oid";
+					key "tagnode";
+					leaf tagnode {
+						type string {
+							pattern '[0-9]+(\.[0-9]+)*' {
+								error-message "oid must start from a number";
+							}
+						}
+						configd:help "Specifies the oid";
+					}
+					leaf exclude {
+						type empty;
+						configd:help "Exclude is optional argument.";
+					}
+					leaf mask {
+						type string {
+							pattern '[0-9a-f]{2}([\.:][0-9a-f]{2})*' {
+								error-message "MASK is a list of hex octets, separated by '.' or ':'";
+							}
+						}
+						configd:help "Defines a bit-mask that is indicating which subidentifiers of the associated subtree OID should be regarded as significant.";
+					}
+				}
+			}
+			leaf location {
+				type string;
+				configd:help "Location information";
+			}
+			container v3 {
+				presence "true";
+				configd:help "Simple Network Management Protocol (SNMP) v3";
+				configd:create "/opt/vyatta/share/tmplscripts/service/snmp/v3/configd_create.sh";
+				configd:begin "/opt/vyatta/share/tmplscripts/service/snmp/v3/configd_begin.sh";
+				configd:end "/opt/vyatta/share/tmplscripts/service/snmp/v3/configd_end.sh";
+				list trap-target {
+					configd:help "Defines SNMP target for inform or traps for IP";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/configd_validate1.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/configd_validate2.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/configd_validate3.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/configd_validate4.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/configd_validate5.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/configd_validate6.cli";
+					key "tagnode";
+					leaf tagnode {
+						type union {
+							type types:ipv4-address;
+							type types:ipv6-address;
+						}
+						configd:help "Defines SNMP target for inform or traps for IP";
+					}
+					container auth {
+						presence "true";
+						configd:help "Defines the authentication";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/auth/configd_validate1.cli";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/auth/configd_validate2.cli";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/auth/configd_validate3.cli";
+						leaf encrypted-key {
+							type string {
+								pattern '0x[0-9a-f]*' {
+									error-message "key must start from '0x' and contain hex digits";
+								}
+							}
+							configd:secret "true";
+							configd:help "Defines the encrypted password for authentication";
+						}
+						leaf plaintext-key {
+							type string {
+								pattern '.{8,}' {
+									error-message "key must contain 8 or more characters";
+								}
+							}
+							configd:secret "true";
+							configd:help "Defines the clear text password for authentication";
+						}
+						leaf type {
+							type enumeration {
+								enum "md5" {
+									configd:help "Message Digest 5";
+								}
+								enum "sha" {
+									configd:help "Secure Hash Algorithm";
+								}
+							}
+							default "md5";
+							configd:help "Defines the protocol using for authentication";
+							configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/auth/type/configd_allowed.sh";
+						}
+					}
+					leaf user {
+						type string;
+						configd:help "Defines username for authentication";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/user/configd_allowed.sh";
+					}
+					container privacy {
+						presence "true";
+						configd:help "Defines the privacy";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/privacy/configd_validate1.cli";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/privacy/configd_validate2.cli";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/privacy/configd_validate3.cli";
+						leaf encrypted-key {
+							type string {
+								pattern '0x[0-9a-f]*' {
+									error-message "key must start from '0x' and contain hex digits";
+								}
+							}
+							configd:secret "true";
+							configd:help "Defines the encrypted key for privacy protocol";
+						}
+						leaf plaintext-key {
+							type string {
+								pattern '.{8,}' {
+									error-message "key must contain 8 or more characters";
+								}
+							}
+							configd:secret "true";
+							configd:help "Defines the clear text key for privacy protocol";
+						}
+						leaf type {
+							type enumeration {
+								enum "des" {
+									configd:help "Data Encryption Standard";
+								}
+								enum "aes" {
+									configd:help "Advanced Encryption Standard";
+								}
+							}
+							default "des";
+							configd:help "Defines the protocol for privacy";
+							configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/privacy/type/configd_allowed.sh";
+						}
+					}
+					leaf engineid {
+						type string {
+							pattern '(0x){0,1}([0-9a-f][0-9a-f]){1,18}' {
+								error-message "id must contain from 2 to 36 hex digits";
+							}
+						}
+						configd:help "Defines the engineID. (needs for trap)";
+					}
+					leaf port {
+						type uint32 {
+							range 1..65535 {
+								error-message "Port number must be in range 1 to 65535";
+							}
+						}
+						default "162";
+						configd:help "Specifies the TCP/UDP port of a destination for SNMP traps/informs.";
+					}
+					leaf type {
+						type enumeration {
+							enum "inform";
+							enum "trap";
+						}
+						default "inform";
+						configd:help "Specifies the type of notification between inform and trap";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/type/configd_allowed.sh";
+					}
+					leaf protocol {
+						type enumeration {
+							enum "tcp";
+							enum "udp";
+						}
+						default "udp";
+						configd:help "Defines protocol for notification between TCP and UDP";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/trap-target/protocol/configd_allowed.sh";
+					}
+				}
+				list group {
+					configd:help "Specifies the group with name groupname";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/configd_validate1.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/configd_validate2.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/configd_validate3.cli";
+					key "tagnode";
+					leaf tagnode {
+						type string {
+							pattern '[^\(\)\|&-]+' {
+								error-message "illegal characters in name";
+							}
+							configd:syntax "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/configd_syntax1.cli";
+						}
+						configd:help "Specifies the group with name groupname";
+					}
+					leaf seclevel {
+						type enumeration {
+							enum "auth";
+							enum "priv";
+						}
+						configd:help "Defines security level";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/seclevel/configd_allowed.sh";
+					}
+					leaf view {
+						type string;
+						configd:help "Defines the name of view";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/view/configd_allowed.sh";
+					}
+					leaf mode {
+						type enumeration {
+							enum "ro";
+							enum "rw";
+						}
+						default "ro";
+						configd:help "Defines the read/write access";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/group/mode/configd_allowed.sh";
+					}
+				}
+				list user {
+					configd:help "Specifies the user with name username";
+					configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/configd_allowed.sh";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/configd_validate1.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/configd_validate2.cli";
+					key "tagnode";
+					leaf tagnode {
+						type string {
+							pattern '[^\(\)\|&-]+' {
+								error-message "illegal characters in name";
+							}
+							configd:syntax "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/configd_syntax1.cli";
+						}
+						configd:help "Specifies the user with name username";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/configd_allowed.sh";
+					}
+					container auth {
+						presence "true";
+						configd:help "Specifies the auth";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/auth/configd_validate1.cli";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/validate_key.cli";
+						leaf encrypted-key {
+							type string;
+							configd:secret "true";
+							configd:help "Defines the encrypted key for authentication protocol";
+							configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/auth/encrypted-key/configd_allowed.sh";
+						}
+						leaf plaintext-key {
+							type string {
+								pattern '.{8,}' {
+									error-message "key must contain 8 or more characters";
+								}
+							}
+							configd:secret "true";
+							configd:help "Defines the key in the clear text for authentication protocol";
+						}
+						leaf type {
+							type enumeration {
+								enum "md5" {
+									configd:help "Message Digest 5";
+								}
+								enum "sha" {
+									configd:help "Secure Hash Algorithm";
+								}
+							}
+							default "md5";
+							configd:help "Defines the protocol using for authentication";
+							configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/auth/type/configd_allowed.sh";
+						}
+					}
+					leaf tsm-key {
+						type string {
+							configd:syntax "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/tsm-key/configd_syntax1.cli";
+						}
+						configd:help "Specifies finger print or file name of TSM certificate.";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/tsm-key/configd_allowed.sh";
+					}
+					leaf group {
+						type string;
+						configd:help "Specifies group for user name";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/group/configd_allowed.sh";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/group/configd_validate1.cli";
+					}
+					container privacy {
+						presence "true";
+						configd:help "Specifies the privacy";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/privacy/configd_validate1.cli";
+						configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/validate_key.cli";
+						leaf encrypted-key {
+							type string;
+							configd:secret "true";
+							configd:help "Defines the encrypted key for privacy protocol";
+							configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/privacy/encrypted-key/configd_allowed.sh";
+						}
+						leaf plaintext-key {
+							type string {
+								pattern '.{8,}' {
+									error-message "key must contain 8 or more characters";
+								}
+							}
+							configd:secret "true";
+							configd:help "Defines the key in the clear text for protocol for privacy";
+						}
+						leaf type {
+							type enumeration {
+								enum "des" {
+									configd:help "Data Encryption Standard";
+								}
+								enum "aes" {
+									configd:help "Advanced Encryption Standard";
+								}
+							}
+							default "des";
+							configd:help "Defines the protocol for privacy";
+							configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/privacy/type/configd_allowed.sh";
+						}
+					}
+					leaf engineid {
+						type string {
+							pattern '(0x){0,1}([0-9a-f][0-9a-f]){1,18}' {
+								error-message "id must contain from 2 to 36 hex digits";
+							}
+						}
+						configd:help "Specifies the EngineID";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/engineid/configd_allowed.sh";
+					}
+					leaf mode {
+						type enumeration {
+							enum "ro";
+							enum "rw";
+						}
+						default "ro";
+						configd:help "Specifies the mode for access rights of user, read only or write";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/user/mode/configd_allowed.sh";
+					}
+				}
+				container tsm {
+					presence "true";
+					configd:help "Specifies that the snmpd uses encryption.";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/tsm/configd_validate1.cli";
+					configd:validate "/opt/vyatta/share/tmplscripts/service/snmp/v3/tsm/configd_validate2.cli";
+					leaf local-key {
+						type string {
+							configd:syntax "/opt/vyatta/share/tmplscripts/service/snmp/v3/tsm/local-key/configd_syntax1.cli";
+						}
+						configd:help "Defines the server certificate fingerprint or key-file name.";
+						configd:allowed "/opt/vyatta/share/tmplscripts/service/snmp/v3/tsm/local-key/configd_allowed.sh";
+					}
+					leaf port {
+						type uint32 {
+							range 1..65535 {
+								error-message "Port number must be in range 1 to 65535";
+							}
+						}
+						default "10161";
+						configd:help "Defines the port for tsm.";
+					}
+				}
+				leaf engineid {
+					type string {
+						pattern '(0x){0,1}([0-9a-f][0-9a-f]){1,18}' {
+							error-message "id must contain from 2 to 36 hex digits";
+						}
+					}
+					configd:help "Specifies the EngineID as a hex value (e.g., 0xff42)";
+				}
+			}
+			list listen-address {
+				configd:help "IP address to listen for incoming SNMP requests";
+				key "tagnode";
+				leaf tagnode {
+					type union {
+						type types:ipv4-address;
+						type types:ipv6-address;
+					}
+					configd:help "IP address to listen for incoming SNMP requests";
+				}
+				leaf port {
+					type uint32 {
+						range 1..65535 {
+							error-message "Port number must be in range 1 to 65535";
+						}
+					}
+					default "161";
+					configd:help "Port for SNMP service";
+				}
+			}
+		}
+	}
+}
