@@ -1,2 +1,0 @@
-help: Show the list of configured community to context mappings
-run: /opt/vyatta/bin/vyatta-show-snmp.pl --mapping
