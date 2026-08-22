@@ -1,0 +1,14 @@
+/tmp/
+/.debhelper/
+/files
+/*.substvars
+/*.debhelper.log
+/debhelper-build-stamp
+/autoreconf.*
+/vyatta-omrfc5676/
+/vyatta-service-snmp/
+/libsnmp-vyatta-perl/
+/vyatta-entity-sensor-subagent/
+/vyatta-service-snmp-v1-yang/
+/vyatta-service-snmp-routing-instance-op/
+/vyatta-service-snmp-routing-instance-v1-yang/
